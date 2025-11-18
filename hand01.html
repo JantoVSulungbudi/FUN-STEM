@@ -89,10 +89,19 @@ function onResults(results) {
       });
 
       // Display all landmark values
+      const landmarkNames = [
+        "Wrist",
+        "Thumb CMC", "Thumb MCP", "Thumb IP", "Thumb Tip",
+        "Index MCP", "Index PIP", "Index DIP", "Index Tip",
+        "Middle MCP", "Middle PIP", "Middle DIP", "Middle Tip",
+        "Ring MCP", "Ring PIP", "Ring DIP", "Ring Tip",
+        "Pinky MCP", "Pinky PIP", "Pinky DIP", "Pinky Tip"
+      ];
+
       let text = "";
       for (let i = 0; i < landmarks.length; i++) {
         const p = landmarks[i];
-        text += `Landmark ${i}: x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
+        text += `${i} (${landmarkNames[i]}): x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
       }
       landmarkBox.textContent = text;
     }
