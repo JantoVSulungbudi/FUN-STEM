@@ -3,81 +3,73 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hand Tracking to micro:bit (BLE)</title>
-  
+  <title>Hand Tracking with Landmark Display</title>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
   <style>
-    body { background:#111; color:white; text-align:center; }
-    #output_canvas { width: 480px; height: 360px; }
-    button { padding:10px 20px; font-size:16px; margin:10px; }
+    body {
+      background: #111;
+      color: white;
+      text-align: center;
+      font-family: Arial;
+    }
+    #output_canvas {
+      width: 480px;
+      height: 360px;
+      border: 1px solid #444;
+    }
+    #landmarkBox {
+      width: 480px;
+      height: 200px;
+      overflow-y: scroll;
+      background: #000;
+      border: 1px solid #444;
+      padding: 10px;
+      margin: 10px auto;
+      text-align: left;
+      font-size: 13px;
+      white-space: pre;
+    }
   </style>
 </head>
 
 <body>
-  <h2>Hand Tracking → micro:bit (BLE)</h2>
-
-  <button id="connectBtn">Connect micro:bit</button>
-  <p id="status">Status: Not Connected</p>
+  <h2>Hand Tracking with Cross Markers + Landmark Values</h2>
 
   <video id="video" autoplay playsinline style="display:none;"></video>
   <canvas id="output_canvas"></canvas>
 
+  <div id="landmarkBox">Waiting for landmarks...</div>
+
 <script>
-let bleDevice = null;
-let bleServer = null;
-let uartService = null;
-let uartTx = null;
-
-// ---- MICROBIT BLE UART UUIDs ----
-const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const UART_TX_UUID      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // Microbit sends to browser
-const UART_RX_UUID      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // Browser sends to microbit
-
-document.getElementById("connectBtn").onclick = async () => {
-  try {
-    bleDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "BBC micro:bit" }],
-      optionalServices: [UART_SERVICE_UUID]
-    });
-
-    document.getElementById("status").innerText = "Status: Connecting...";
-    bleServer = await bleDevice.gatt.connect();
-
-    uartService = await bleServer.getPrimaryService(UART_SERVICE_UUID);
-    uartTx = await uartService.getCharacteristic(UART_RX_UUID);
-
-    document.getElementById("status").innerText = "Status: Connected!";
-  } 
-  catch (error) {
-    console.log(error);
-    document.getElementById("status").innerText = "Status: FAILED to connect";
-  }
-};
-
-async function sendToMicrobit(text) {
-  if (!uartTx) return;
-  try {
-    let data = new TextEncoder().encode(text + "\n");
-    await uartTx.writeValue(data);
-  } catch (e) {
-    console.log("BLE SEND ERROR:", e);
-  }
-}
-
-// ---------------- MediaPipe Hands ----------------
-
 const video = document.getElementById("video");
 const canvas = document.getElementById("output_canvas");
 const ctx = canvas.getContext("2d");
+const landmarkBox = document.getElementById("landmarkBox");
 
+// ---------------- SMALL "X" DRAW FUNCTION ----------------
+function drawCross(ctx, x, y, size, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - size, y - size);
+  ctx.lineTo(x + size, y + size);
+  ctx.moveTo(x + size, y - size);
+  ctx.lineTo(x - size, y + size);
+  ctx.stroke();
+}
+
+// ---------------- CAMERA INIT ----------------
 async function initCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
 }
+initCamera();
 
+// ---------------- HAND PROCESSING ----------------
 function onResults(results) {
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -85,24 +77,28 @@ function onResults(results) {
 
   if (results.multiHandLandmarks) {
     for (const landmarks of results.multiHandLandmarks) {
-      // Draw the hand landmarks
-      drawConnectors(ctx, landmarks, HAND_CONNECTIONS);
-      drawLandmarks(ctx, landmarks);
 
-      // ---- SEND LANDMARKS TO MICROBIT ----
-      // flatten array: "x1,y1,z1,x2,y2,z2,..."
-      let data = [];
-      landmarks.forEach(p => {
-        data.push(p.x.toFixed(3), p.y.toFixed(3), p.z.toFixed(3));
+      // Draw connections
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#00FFAA", lineWidth: 2 });
+
+      // Draw each point as small "X"
+      landmarks.forEach((p) => {
+        const x = p.x * canvas.width;
+        const y = p.y * canvas.height;
+        drawCross(ctx, x, y, 4, "#FF4444");
       });
 
-      sendToMicrobit(data.join(","));
+      // Display all landmark values
+      let text = "";
+      for (let i = 0; i < landmarks.length; i++) {
+        const p = landmarks[i];
+        text += `Landmark ${i}: x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
+      }
+      landmarkBox.textContent = text;
     }
   }
   ctx.restore();
 }
-
-initCamera();
 
 const hands = new Hands({
   locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -115,8 +111,11 @@ hands.setOptions({
 });
 hands.onResults(onResults);
 
+// Start camera
 const camera = new Camera(video, {
-  onFrame: async () => { await hands.send({ image: video }); },
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
   width: 480, height: 360
 });
 camera.start();
