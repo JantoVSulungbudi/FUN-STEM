@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hand Tracking to micro:bit (BLE)</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <style>
+    body { background:#111; color:white; text-align:center; }
+    #output_canvas { width: 480px; height: 360px; }
+    button { padding:10px 20px; font-size:16px; margin:10px; }
+  </style>
+</head>
+
+<body>
+  <h2>Hand Tracking → micro:bit (BLE)</h2>
+
+  <button id="connectBtn">Connect micro:bit</button>
+  <p id="status">Status: Not Connected</p>
+
+  <video id="video" autoplay playsinline style="display:none;"></video>
+  <canvas id="output_canvas"></canvas>
+
+<script>
+let bleDevice = null;
+let bleServer = null;
+let uartService = null;
+let uartTx = null;
+
+// ---- MICROBIT BLE UART UUIDs ----
+const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_TX_UUID      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // Microbit sends to browser
+const UART_RX_UUID      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // Browser sends to microbit
+
+document.getElementById("connectBtn").onclick = async () => {
+  try {
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "BBC micro:bit" }],
+      optionalServices: [UART_SERVICE_UUID]
+    });
+
+    document.getElementById("status").innerText = "Status: Connecting...";
+    bleServer = await bleDevice.gatt.connect();
+
+    uartService = await bleServer.getPrimaryService(UART_SERVICE_UUID);
+    uartTx = await uartService.getCharacteristic(UART_RX_UUID);
+
+    document.getElementById("status").innerText = "Status: Connected!";
+  } 
+  catch (error) {
+    console.log(error);
+    document.getElementById("status").innerText = "Status: FAILED to connect";
+  }
+};
+
+async function sendToMicrobit(text) {
+  if (!uartTx) return;
+  try {
+    let data = new TextEncoder().encode(text + "\n");
+    await uartTx.writeValue(data);
+  } catch (e) {
+    console.log("BLE SEND ERROR:", e);
+  }
+}
+
+// ---------------- MediaPipe Hands ----------------
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("output_canvas");
+const ctx = canvas.getContext("2d");
+
+async function initCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+}
+
+function onResults(results) {
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+  if (results.multiHandLandmarks) {
+    for (const landmarks of results.multiHandLandmarks) {
+      // Draw the hand landmarks
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS);
+      drawLandmarks(ctx, landmarks);
+
+      // ---- SEND LANDMARKS TO MICROBIT ----
+      // flatten array: "x1,y1,z1,x2,y2,z2,..."
+      let data = [];
+      landmarks.forEach(p => {
+        data.push(p.x.toFixed(3), p.y.toFixed(3), p.z.toFixed(3));
+      });
+
+      sendToMicrobit(data.join(","));
+    }
+  }
+  ctx.restore();
+}
+
+initCamera();
+
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+hands.onResults(onResults);
+
+const camera = new Camera(video, {
+  onFrame: async () => { await hands.send({ image: video }); },
+  width: 480, height: 360
+});
+camera.start();
+
+</script>
+</body>
+</html>
