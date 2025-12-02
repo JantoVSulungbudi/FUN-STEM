@@ -101,7 +101,8 @@ function onResults(results) {
       let text = "";
       for (let i = 0; i < landmarks.length; i++) {
         const p = landmarks[i];
-        text += `${i} (${landmarkNames[i]}): x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
+        //text += `${i} (${landmarkNames[i]}): x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
+        text += `${i} (${landmarkNames[i]}): x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}\n`;
       }
       landmarkBox.textContent = text;
     }
