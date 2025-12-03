@@ -165,7 +165,7 @@ function encodeBLEChar(code) {
     case 'UP': return 'f';
     case 'DOWN': return 'b';
     case 'STOP': return 's';
-    case 'OPEN HAND': return 'o';
+    case 'LEPAS': return 'o';
     case 'PICK-UP': return 'p';
     default: return null;
   }
@@ -201,7 +201,7 @@ function detectPickUp(L) {
   return (d48 < 0.06 && d412 < 0.06 && d812 < 0.06);
 }
 
-// OPEN HAND (Option A): avg wrist->tips (4,8,12,16,20) > threshold
+// LEPAS (Option A): avg wrist->tips (4,8,12,16,20) > threshold
 function detectOpenHand(L) {
   if (!L || L.length < 21) return false;
   const wrist = L[0];
@@ -264,7 +264,7 @@ function onResults(results) {
   const openhand = detectOpenHand(L);
   let handState = null;
   if (pickup) handState = 'PICK-UP';
-  else if (openhand) handState = 'OPEN HAND';
+  else if (openhand) handState = 'LEPAS';
 
   const movement = detectMovement(L);
 
