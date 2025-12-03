@@ -1,165 +1,305 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hand Tracking + micro:bit BLE</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hand Tracking + micro:bit BLE (Fixed)</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
   <style>
-    body { background:#111; color:white; text-align:center; font-family:Arial; }
-    #output_canvas{ width:480px; height:360px; border:1px solid #444; }
-    #status { margin:10px; font-size:18px; color:#0f0; }
-    #bleStatus { margin:10px; color:yellow; }
-    #connectBtn{ padding:10px 18px; font-size:16px; }
+    body { background:#111; color:#eee; font-family:Arial; text-align:center; padding:12px; }
+    canvas { border:1px solid #444; display:block; margin:12px auto; }
+    #controls { margin:8px auto; }
+    #bleBtn { padding:8px 14px; font-size:16px; }
+    #bleStatus { margin-left:10px; color:lightyellow; }
+    #status { margin-top:8px; font-size:18px; background:#222; display:inline-block; padding:6px 10px; border-radius:6px; border:1px solid #333; }
+    #landmarkBox { width:640px; height:140px; margin:10px auto; background:#000; color:#ccc; overflow:auto; padding:8px; border:1px solid #333; font-family:monospace; white-space:pre; }
   </style>
 </head>
-
 <body>
-  <h2>Hand Tracking + micro:bit BLE</h2>
+  <h2>Hand Tracking + micro:bit BLE (Fixed)</h2>
 
-  <button id="connectBtn">Connect</button>
-  <div id="bleStatus">Not Connected</div>
+  <div id="controls">
+    <button id="bleBtn">Connect</button>
+    <span id="bleStatus">Disconnected</span>
+  </div>
 
+  <canvas id="canvas" width="640" height="480"></canvas>
   <div id="status">Waiting...</div>
+  <div id="landmarkBox">Waiting for landmarks...</div>
 
-  <video id="video" autoplay playsinline style="display:none;"></video>
-  <canvas id="output_canvas"></canvas>
+  <video id="video" autoplay playsinline style="display:none"></video>
 
 <script>
-/* ============================================================
-   CANVAS & VIDEO SETUP
-============================================================ */
-const video = document.getElementById("video");
-const canvas = document.getElementById("output_canvas");
-const ctx = canvas.getContext("2d");
-const statusBox = document.getElementById("status");
+/* -----------------------
+   Utilities & UI refs
+   ----------------------- */
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const landmarkBox = document.getElementById('landmarkBox');
+const bleBtn = document.getElementById('bleBtn');
+const bleStatus = document.getElementById('bleStatus');
 
-async function initCamera(){
-  const stream = await navigator.mediaDevices.getUserMedia({ video:true });
-  video.srcObject = stream;
+/* -----------------------
+   Camera init
+   ----------------------- */
+async function initCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width:640, height:480 } });
+    video.srcObject = stream;
+  } catch (e) {
+    console.error('Camera init error', e);
+    statusEl.textContent = 'Camera error';
+  }
 }
 initCamera();
 
-/* ============================================================
-   DRAW SMALL CROSS
-============================================================ */
-function drawCross(ctx,x,y,size,color){
+/* -----------------------
+   Draw small X
+   ----------------------- */
+function drawCross(ctx, x, y, size, color) {
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(x-size, y-size);
-  ctx.lineTo(x+size, y+size);
-  ctx.moveTo(x+size, y-size);
-  ctx.lineTo(x-size, y+size);
+  ctx.moveTo(x - size, y - size);
+  ctx.lineTo(x + size, y + size);
+  ctx.moveTo(x + size, y - size);
+  ctx.lineTo(x - size, y + size);
   ctx.stroke();
 }
 
-/* ============================================================
-   GESTURE STATE VARIABLES
-============================================================ */
-let lastMovement = "STOP";
-let lastHandState = "OPEN";
+/* -----------------------
+   BLE: micro:bit UART (queue + writeValueWithoutResponse)
+   ----------------------- */
+const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_TX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // notify (microbit -> web)
+const UART_RX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // write (web -> microbit)
 
-/* ============================================================
-   MAIN HAND PROCESSOR
-============================================================ */
-function onResults(results){
-  ctx.save();
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+let uBitDevice = null;
+let rxChar = null; // write characteristic (web -> microbit)
+let txChar = null; // notify characteristic (microbit -> web)
+let connected = false;
 
-  if(results.multiHandLandmarks){
-    const lm = results.multiHandLandmarks[0];
-
-    /* Draw skeleton and landmarks */
-    drawConnectors(ctx, lm, HAND_CONNECTIONS, {color:"#00FFAA", lineWidth:2});
-    lm.forEach(p => {
-      drawCross(ctx, p.x*canvas.width, p.y*canvas.height, 1, "#FF4444");
-    });
-
-    /* --------------------------------------------------------
-       MOVEMENT DETECTION (USING WRIST ONLY)
-    -------------------------------------------------------- */
-    const wrist = lm[0];
-    const x = wrist.x;
-    const y = wrist.y;
-
-    // Your thresholds
-    const left = 0.4;
-    const right = 0.6;
-    const top = 0.5;
-    const bottom = 0.7;
-
-    let movement = "STOP";
-    if (x < left) movement = "LEFT";
-    else if (x > right) movement = "RIGHT";
-    else if (y < top) movement = "UP";
-    else if (y > bottom) movement = "DOWN";
-    else movement = "STOP";
-
-    /* --------------------------------------------------------
-       HAND GESTURE DETECTION (Version A)
-       - PICK-UP when 4,8,12 very close
-       - OPEN HAND when average finger-tip spread is wide
-    -------------------------------------------------------- */
-
-    // Distances
-    function dist(a,b){
-      return Math.hypot(a.x - b.x, a.y - b.y);
-    }
-
-    const d48 = dist(lm[4], lm[8]);
-    const d412 = dist(lm[4], lm[12]);
-    const d812 = dist(lm[8], lm[12]);
-
-    let handState = "OPEN";
-
-    if (d48 < 0.06 && d412 < 0.06 && d812 < 0.06){
-      handState = "PICK-UP";
-    } else {
-      // OPEN hand = average spread of fingertips from wrist
-      const tips = [lm[4], lm[8], lm[12], lm[16], lm[20]];
-      let sum = 0;
-      for (let t of tips) sum += dist(lm[0], t);
-      const avg = sum / 5;
-
-      handState = (avg > 0.22 ? "OPEN" : "PICK-UP");  
-    }
-
-    /* --------------------------------------------------------
-       CHANGE-ONLY OUTPUT
-    -------------------------------------------------------- */
-    if (movement !== lastMovement){
-      lastMovement = movement;
-      statusBox.textContent = movement;
-      if (isConnected){
-        if (movement === "LEFT") sendUART("l");
-        if (movement === "RIGHT") sendUART("r");
-        if (movement === "UP") sendUART("f");
-        if (movement === "DOWN") sendUART("b");
-        if (movement === "STOP") sendUART("s");
-      }
-    }
-
-    if (handState !== lastHandState){
-      lastHandState = handState;
-      statusBox.textContent = handState;
-      if (isConnected){
-        if (handState === "OPEN") sendUART("o");
-        if (handState === "PICK-UP") sendUART("p");
-      }
-    }
-  }
-  ctx.restore();
+// GATT queue to serialize writes
+let gattQueue = Promise.resolve();
+function queueGattOperation(op) {
+  gattQueue = gattQueue.then(op, op);
+  return gattQueue;
 }
 
-/* ============================================================
-   MEDIAPIPE SETUP
-============================================================ */
+async function connectMicrobit() {
+  try {
+    bleStatus.textContent = 'Scanning...';
+    uBitDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "BBC micro:bit" }, { namePrefix: "micro:bit" }],
+      optionalServices: [UART_SERVICE_UUID]
+    });
+
+    uBitDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+    const server = await uBitDevice.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE_UUID);
+
+    // RX char (write)
+    rxChar = await service.getCharacteristic(UART_RX_CHARACTERISTIC_UUID);
+
+    // TX char (notify) - optional but useful for debug
+    try {
+      txChar = await service.getCharacteristic(UART_TX_CHARACTERISTIC_UUID);
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', (ev) => {
+        const txt = new TextDecoder().decode(ev.target.value);
+        console.log('microbit ->', txt);
+      });
+    } catch (e) {
+      console.warn('Failed to start notifications (TX)', e);
+      txChar = null;
+    }
+
+    connected = true;
+    bleBtn.textContent = 'Disconnect';
+    bleStatus.textContent = `Connected: ${uBitDevice.name || 'micro:bit'}`;
+    console.log('Connected to micro:bit');
+  } catch (err) {
+    console.error('BLE connect error', err);
+    bleStatus.textContent = 'Connection failed';
+    connected = false;
+  }
+}
+
+function disconnectMicrobit() {
+  if (uBitDevice && uBitDevice.gatt.connected) {
+    uBitDevice.gatt.disconnect();
+  }
+  connected = false;
+  rxChar = null;
+  txChar = null;
+  bleBtn.textContent = 'Connect';
+  bleStatus.textContent = 'Disconnected';
+  console.log('Disconnected from micro:bit');
+}
+
+function onDisconnected() {
+  console.log('micro:bit disconnected');
+  connected = false;
+  rxChar = null;
+  txChar = null;
+  bleBtn.textContent = 'Connect';
+  bleStatus.textContent = 'Disconnected';
+}
+
+bleBtn.onclick = () => {
+  if (!connected) connectMicrobit();
+  else disconnectMicrobit();
+};
+
+function encodeBLEChar(code) {
+  switch (code) {
+    case 'LEFT': return 'l';
+    case 'RIGHT': return 'r';
+    case 'UP': return 'f';
+    case 'DOWN': return 'b';
+    case 'STOP': return 's';
+    case 'OPEN HAND': return 'o';
+    case 'PICK-UP': return 'p';
+    default: return null;
+  }
+}
+
+// send via writeValueWithoutResponse using the queue
+function sendToMicrobit(char) {
+  if (!rxChar || !connected) return;
+  const data = new TextEncoder().encode(char + '\n'); // newline may help micro:bit parsing
+  queueGattOperation(() => rxChar.writeValueWithoutResponse(data).then(() => {
+    console.log('sent', JSON.stringify(char));
+  }).catch(err => {
+    console.error('write error', err);
+  }));
+}
+
+/* -----------------------
+   Detection logic (Version A) & state-change send
+   ----------------------- */
+let lastCombined = null;
+
+// helper distance (2D)
+function dist(a,b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// PICK-UP: 4,8,12 together
+function detectPickUp(L) {
+  if (!L || L.length < 13) return false;
+  const d48 = dist(L[4], L[8]);
+  const d412 = dist(L[4], L[12]);
+  const d812 = dist(L[8], L[12]);
+  return (d48 < 0.06 && d412 < 0.06 && d812 < 0.06);
+}
+
+// OPEN HAND (Option A): avg wrist->tips (4,8,12,16,20) > threshold
+function detectOpenHand(L) {
+  if (!L || L.length < 21) return false;
+  const wrist = L[0];
+  const tips = [4,8,12,16,20];
+  let s = 0;
+  for (const t of tips) s += dist(wrist, L[t]);
+  const avg = s / tips.length;
+  return avg > 0.22;
+}
+
+// Movement: wrist-only with your thresholds & swapped LEFT/RIGHT mapping
+function detectMovement(L) {
+  if (!L || L.length === 0) return 'STOP';
+  const w = L[0];
+  const x = w.x, y = w.y;
+  const left = 0.4, right = 0.6, top = 0.5, bottom = 0.7;
+
+  if (y < top) return 'UP';
+  if (y > bottom) return 'DOWN';
+  if (x > right) return 'LEFT';   // swapped mapping as requested
+  if (x < left)  return 'RIGHT';
+  return 'STOP';
+}
+
+/* -----------------------
+   Mediapipe onResults
+   ----------------------- */
+function onResults(results) {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    // No hand -> combined = STOP
+    const combined = 'STOP';
+    // update display on change
+    if (combined !== lastCombined) {
+      lastCombined = combined;
+      statusEl.textContent = combined;
+      // send STOP
+      if (connected) {
+        const ch = encodeBLEChar('STOP');
+        if (ch) sendToMicrobit(ch);
+      }
+    }
+    landmarkBox.textContent = 'No hands detected';
+    return;
+  }
+
+  const L = results.multiHandLandmarks[0];
+
+  // draw connectors & landmarks as small X
+  drawConnectors(ctx, L, HAND_CONNECTIONS, { color: '#00FFAA', lineWidth: 2 });
+  for (let i=0;i<L.length;i++){
+    const p = L[i];
+    drawCross(ctx, p.x * canvas.width, p.y * canvas.height, 2, '#FF4444');
+  }
+
+  // detect states
+  const pickup = detectPickUp(L);
+  const openhand = detectOpenHand(L);
+  let handState = null;
+  if (pickup) handState = 'PICK-UP';
+  else if (openhand) handState = 'OPEN HAND';
+
+  const movement = detectMovement(L);
+
+  // combine: if handState exists show prefix, movement always present
+  let combined = movement;
+  if (handState) combined = handState + ' + ' + movement;
+
+  // update when changed
+  if (combined !== lastCombined) {
+    lastCombined = combined;
+    statusEl.textContent = combined;
+
+    // send BLE: send hand state char first (if any), then movement char
+    if (connected) {
+      if (handState) {
+        const chH = encodeBLEChar(handState);
+        if (chH) sendToMicrobit(chH);
+      }
+      const chM = encodeBLEChar(movement);
+      if (chM) sendToMicrobit(chM);
+    }
+  }
+
+  // show landmarks numeric
+  let txt = '';
+  for (let i=0;i<L.length;i++){
+    const p = L[i];
+    txt += `${i}: x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z?p.z.toFixed(3):'0.000'}\n`;
+  }
+  landmarkBox.textContent = txt;
+}
+
+/* -----------------------
+   Mediapipe setup
+   ----------------------- */
 const hands = new Hands({
   locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
@@ -171,38 +311,12 @@ hands.setOptions({
 });
 hands.onResults(onResults);
 
-const camera = new Camera(video,{
-  onFrame: async()=>{ await hands.send({image:video}); },
-  width:480, height:360
+const camera = new Camera(video, {
+  onFrame: async () => { await hands.send({ image: video }); },
+  width: 640, height: 480
 });
 camera.start();
 
-/* ============================================================
-   MICRO:BIT BLE UART
-============================================================ */
-const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const UART_TX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; 
-const UART_RX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; 
-
-let device = null;
-let rxChar = null;
-let isConnected = false;
-
-async function connectMicrobit(){
-  try {
-    document.getElementById("bleStatus").textContent = "Scanning...";
-
-    device = await navigator.bluetooth.requestDevice({
-      filters:[{namePrefix:"BBC micro:bit"},{namePrefix:"micro:bit"}],
-      optionalServices:[UART_SERVICE_UUID]
-    });
-
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(UART_SERVICE_UUID);
-
-    // RX = WRITE
-    rxChar = await service.getCharacteristic(UART_RX_CHARACTERISTIC_UUID);
-
-    isConnected = true;
-    document.getElementById("connectBtn").textContent = "Disconnect";
-    document.getElementById("bleStatus
+</script>
+</body>
+</html>
