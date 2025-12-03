@@ -209,7 +209,7 @@ function detectOpenHand(L) {
   let s = 0;
   for (const t of tips) s += dist(wrist, L[t]);
   const avg = s / tips.length;
-  return avg > 0.18;
+  return avg > 0.15;
 }
 
 // Movement: wrist-only with your thresholds & swapped LEFT/RIGHT mapping
@@ -217,7 +217,7 @@ function detectMovement(L) {
   if (!L || L.length === 0) return 'STOP';
   const w = L[0];
   const x = w.x, y = w.y;
-  const left = 0.4, right = 0.6, top = 0.5, bottom = 0.7;
+  const left = 0.3, right = 0.7, top = 0.5, bottom = 0.8;
 
   if (y < top) return 'NAIK';
   if (y > bottom) return 'TURUN';
