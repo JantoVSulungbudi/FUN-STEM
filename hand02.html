@@ -34,18 +34,18 @@ function getDirection(landmarks) {
   const y = wrist.y;
 
   // Horizontal thresholds
-  const left = 0.33;
-  const right = 0.66;
+  const left = 0.4;
+  const right = 0.6;
 
   // Vertical thresholds
-  const top = 0.33;
-  const bottom = 0.66;
+  const top = 0.5;
+  const bottom = 0.7;
 
   // Priority logic
   if (y < top) return "UP";
   if (y > bottom) return "DOWN";
-  if (x < left) return "LEFT";
-  if (x > right) return "RIGHT";
+  if (x < left) return "RIGHT";
+  if (x > right) return "LEFT";
 
   return "STOP";
 }
