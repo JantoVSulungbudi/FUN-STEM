@@ -21,25 +21,24 @@
       height: 360px;
       border: 1px solid #444;
     }
-    #landmarkBox {
+    #landmarkBox, #movementBox {
       width: 480px;
-      height: 200px;
-      overflow-y: scroll;
       background: #000;
       border: 1px solid #444;
-      padding: 10px;
       margin: 10px auto;
+    }
+    #landmarkBox {
+      height: 200px;
+      overflow-y: scroll;
+      padding: 10px;
       text-align: left;
-      font-size: 13px;
       white-space: pre;
+      font-size: 13px;
     }
     #movementBox {
-      width: 480px;
-      background: #222;
       padding: 10px;
-      margin: 10px auto;
-      border: 1px solid #444;
       font-size: 20px;
+      background: #222;
     }
   </style>
 </head>
@@ -60,7 +59,7 @@ const ctx = canvas.getContext("2d");
 const movementBox = document.getElementById("movementBox");
 const landmarkBox = document.getElementById("landmarkBox");
 
-// Draw tiny "X"
+// Small X marker
 function drawCross(ctx, x, y, size, color) {
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
@@ -79,10 +78,10 @@ async function initCamera() {
 }
 initCamera();
 
-// -------- MOVEMENT + GESTURE VARIABLES --------
+// -------- MOVEMENT DETECTION --------
 let lastWristX = null;
 let lastWristY = null;
-const moveThreshold = 0.02; // adjust sensitivity
+const moveThreshold = 0.02;
 
 function detectMovement(wrist) {
   let movement = "none";
@@ -106,27 +105,24 @@ function detectMovement(wrist) {
   return movement;
 }
 
+// -------- GESTURE DETECTION --------
 function distance(a, b) {
-  return Math.sqrt(
-    (a.x - b.x)**2 +
-    (a.y - b.y)**2 +
-    (a.z - b.z)**2
-  );
+  return Math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2 + (a.z - b.z)**2);
 }
 
-// Detect pick-up (fist) and open hand
 function detectHandOpenClose(landmarks) {
   const wrist = landmarks[0];
   const tips = [4, 8, 12, 16, 20];
 
   let avgDist = 0;
-  for (let i of tips) avgDist += distance(wrist, landmarks[i]);
+  for (let tip of tips) avgDist += distance(wrist, landmarks[tip]);
   avgDist /= tips.length;
 
-  if (avgDist < 0.09) return "PICK-UP (FIST)";
-  if (avgDist > 0.17) return "OPEN HAND";
+  // tuned thresholds
+  if (avgDist < 0.12) return "PICK-UP";
+  if (avgDist > 0.22) return "OPEN";
 
-  return "neutral";
+  return "NEUTRAL";
 }
 
 // -------- MAIN HAND PROCESSING --------
@@ -140,37 +136,38 @@ function onResults(results) {
 
       drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#00FFAA", lineWidth: 2 });
 
-      // Draw all points as small X
+      // Draw points as small X
       landmarks.forEach((p) => {
-        const x = p.x * canvas.width;
-        const y = p.y * canvas.height;
-        drawCross(ctx, x, y, 2, "#FF4444");
+        drawCross(ctx, p.x * canvas.width, p.y * canvas.height, 2, "#FF4444");
       });
 
-      // Detect movement
+      // Gesture (open / pick-up)
+      const state = detectHandOpenClose(landmarks);
+
+      // Movement (only when neutral)
       const wrist = landmarks[0];
-      let move = detectMovement(wrist);
+      const movement = detectMovement(wrist);
 
-      // Detect open / pick-up
-      let handState = detectHandOpenClose(landmarks);
-
-      let resultText = move;
-      if (handState !== "neutral") resultText = handState;
+      let resultText = "";
+      if (state === "PICK-UP") resultText = "PICK-UP";
+      else if (state === "OPEN") resultText = "OPEN HAND";
+      else resultText = movement;  // NEUTRAL → movement allowed
 
       movementBox.textContent = "Movement: " + resultText;
 
-      // Display all landmark values
-      let text = "";
+      // Landmark text
+      let t = "";
       for (let i = 0; i < landmarks.length; i++) {
-        const p = landmarks[i];
-        text += `${i} → x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
+        t += `${i}: x=${landmarks[i].x.toFixed(3)}, y=${landmarks[i].y.toFixed(3)}, z=${landmarks[i].z.toFixed(3)}\n`;
       }
-      landmarkBox.textContent = text;
+      landmarkBox.textContent = t;
     }
   }
+
   ctx.restore();
 }
 
+// Mediapipe Hands
 const hands = new Hands({
   locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
@@ -182,6 +179,7 @@ hands.setOptions({
 });
 hands.onResults(onResults);
 
+// Start cam
 const camera = new Camera(video, {
   onFrame: async () => {
     await hands.send({ image: video });
