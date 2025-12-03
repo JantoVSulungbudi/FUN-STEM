@@ -44,7 +44,7 @@
 </head>
 
 <body>
-  <h2>Hand Tracking + Movement Detection</h2>
+  <h2>Hand Tracking + Movement Detection (Change Only)</h2>
 
   <video id="video" autoplay playsinline style="display:none;"></video>
   <canvas id="output_canvas"></canvas>
@@ -84,25 +84,31 @@ let lastWristY = null;
 const moveThreshold = 0.02;
 
 function detectMovement(wrist) {
-  let movement = "none";
-
-  if (lastWristX !== null) {
-    const dx = wrist.x - lastWristX;
-    const dy = wrist.y - lastWristY;
-
-    if (Math.abs(dx) > Math.abs(dy)) {
-      if (dx > moveThreshold) movement = "RIGHT";
-      else if (dx < -moveThreshold) movement = "LEFT";
-    } else {
-      if (dy > moveThreshold) movement = "DOWN";
-      else if (dy < -moveThreshold) movement = "UP";
-    }
+  if (lastWristX === null) {
+    lastWristX = wrist.x;
+    lastWristY = wrist.y;
+    return "STOP";
   }
+
+  const dx = wrist.x - lastWristX;
+  const dy = wrist.y - lastWristY;
 
   lastWristX = wrist.x;
   lastWristY = wrist.y;
 
-  return movement;
+  if (Math.abs(dx) < moveThreshold && Math.abs(dy) < moveThreshold) {
+    return "STOP";
+  }
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > moveThreshold) return "RIGHT";
+    if (dx < -moveThreshold) return "LEFT";
+  } else {
+    if (dy > moveThreshold) return "DOWN";
+    if (dy < -moveThreshold) return "UP";
+  }
+
+  return "STOP";
 }
 
 // -------- GESTURE DETECTION --------
@@ -118,12 +124,14 @@ function detectHandOpenClose(landmarks) {
   for (let tip of tips) avgDist += distance(wrist, landmarks[tip]);
   avgDist /= tips.length;
 
-  // tuned thresholds
   if (avgDist < 0.12) return "PICK-UP";
-  if (avgDist > 0.22) return "OPEN";
+  if (avgDist > 0.22) return "OPEN HAND";
 
   return "NEUTRAL";
 }
+
+// -------- STATE CHANGE CONTROL --------
+let lastOutput = "none";
 
 // -------- MAIN HAND PROCESSING --------
 function onResults(results) {
@@ -135,32 +143,30 @@ function onResults(results) {
     for (const landmarks of results.multiHandLandmarks) {
 
       drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#00FFAA", lineWidth: 2 });
+      landmarks.forEach((p) => drawCross(ctx, p.x * canvas.width, p.y * canvas.height, 2, "#FF4444"));
 
-      // Draw points as small X
-      landmarks.forEach((p) => {
-        drawCross(ctx, p.x * canvas.width, p.y * canvas.height, 2, "#FF4444");
-      });
-
-      // Gesture (open / pick-up)
-      const state = detectHandOpenClose(landmarks);
-
-      // Movement (only when neutral)
+      const gesture = detectHandOpenClose(landmarks);
       const wrist = landmarks[0];
-      const movement = detectMovement(wrist);
+      const move = detectMovement(wrist);
 
-      let resultText = "";
-      if (state === "PICK-UP") resultText = "PICK-UP";
-      else if (state === "OPEN") resultText = "OPEN HAND";
-      else resultText = movement;  // NEUTRAL → movement allowed
+      let output = "";
 
-      movementBox.textContent = "Movement: " + resultText;
+      if (gesture === "PICK-UP") output = "PICK-UP";
+      else if (gesture === "OPEN HAND") output = "OPEN HAND";
+      else output = move;
 
-      // Landmark text
-      let t = "";
-      for (let i = 0; i < landmarks.length; i++) {
-        t += `${i}: x=${landmarks[i].x.toFixed(3)}, y=${landmarks[i].y.toFixed(3)}, z=${landmarks[i].z.toFixed(3)}\n`;
+      // Only update if the state CHANGES
+      if (output !== lastOutput) {
+        movementBox.textContent = "Movement: " + output;
+        lastOutput = output;
       }
-      landmarkBox.textContent = t;
+
+      // Show all landmark values
+      let text = "";
+      for (let i = 0; i < landmarks.length; i++) {
+        text += `${i}: x=${landmarks[i].x.toFixed(3)}, y=${landmarks[i].y.toFixed(3)}, z=${landmarks[i].z.toFixed(3)}\n`;
+      }
+      landmarkBox.textContent = text;
     }
   }
 
