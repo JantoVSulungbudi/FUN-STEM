@@ -2,12 +2,14 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Wrist Position Direction</title>
+  <title>Hand Tracking Movement + Hand State</title>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
   <style>
-    body { font-family: Arial; }
+    body { font-family: Arial; text-align: center; }
     #log { font-size: 32px; font-weight: bold; margin-top: 10px; }
   </style>
 </head>
@@ -25,73 +27,116 @@ const log = document.getElementById("log");
 
 let lastState = "STOP";
 
-// ---------------------------
-// Wrist Position Direction Logic
-// ---------------------------
-function getDirection(landmarks) {
-  const wrist = landmarks[0];    // wrist landmark
-  const x = wrist.x;             // normalized 0 → 1
+// -----------------------------------------
+// DISTANCE HELPER
+// -----------------------------------------
+function dist(a, b) {
+  return Math.sqrt(
+    (a.x - b.x) * (a.x - b.x) +
+    (a.y - b.y) * (a.y - b.y)
+  );
+}
+
+// -----------------------------------------
+// HAND STATE: OPEN HAND / PICK-UP
+// -----------------------------------------
+function getHandState(landmarks) {
+  const p4 = landmarks[4];
+  const p8 = landmarks[8];
+  const p12 = landmarks[12];
+
+  const d4_8  = dist(p4, p8);
+  const d4_12 = dist(p4, p12);
+  const d8_12 = dist(p8, p12);
+
+  // PICK-UP = all close together
+  if (d4_8 < 0.06 && d4_12 < 0.06 && d8_12 < 0.06) {
+    return "PICK-UP";
+  }
+
+  // OPEN HAND = all far apart
+  if (d4_8 > 0.10 && d4_12 > 0.10 && d8_12 > 0.10) {
+    return "OPEN HAND";
+  }
+
+  return null; // no hand state change
+}
+
+// -----------------------------------------
+// MOVEMENT: LEFT / RIGHT / UP / DOWN / STOP
+// -----------------------------------------
+function getMovement(landmarks) {
+  const wrist = landmarks[0];
+  const x = wrist.x;
   const y = wrist.y;
 
-  // Horizontal thresholds
+  // thresholds (your updated values)
   const left = 0.4;
   const right = 0.6;
 
-  // Vertical thresholds
   const top = 0.5;
   const bottom = 0.7;
 
-  // Priority logic
   if (y < top) return "UP";
   if (y > bottom) return "DOWN";
-  if (x < left) return "RIGHT";
-  if (x > right) return "LEFT";
+  if (x > right) return "LEFT";   // swapped
+  if (x < left) return "RIGHT";  // swapped
 
   return "STOP";
 }
 
-// ---------------------------
-// On Results from MediaPipe
-// ---------------------------
+// -----------------------------------------
+// MAIN RESULT HANDLER
+// -----------------------------------------
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-    const landmarks = results.multiHandLandmarks[0];
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    return;
+  }
 
-    // Draw wrist
-    const wrist = landmarks[0];
-    ctx.beginPath();
-    ctx.arc(wrist.x * canvas.width, wrist.y * canvas.height, 6, 0, 2 * Math.PI);
-    ctx.fillStyle = "red";
-    ctx.fill();
+  const landmarks = results.multiHandLandmarks[0];
 
-    const state = getDirection(landmarks);
+  // Draw wrist
+  const wrist = landmarks[0];
+  ctx.beginPath();
+  ctx.arc(wrist.x * canvas.width, wrist.y * canvas.height, 6, 0, Math.PI * 2);
+  ctx.fillStyle = "red";
+  ctx.fill();
 
-    // Print only when state changes
-    if (state !== lastState) {
-      log.innerText = state;
-      lastState = state;
-    }
+  // Determine states
+  const handState = getHandState(landmarks);
+  const moveState = getMovement(landmarks);
+
+  let finalState = "STOP";
+
+  // PRIORITY ORDER
+  if (handState === "PICK-UP") finalState = "PICK-UP";
+  else if (handState === "OPEN HAND") finalState = "OPEN HAND";
+  else finalState = moveState;
+
+  // Only show when changed
+  if (finalState !== lastState) {
+    log.innerText = finalState;
+    lastState = finalState;
   }
 }
 
-// ---------------------------
-// Setup MediaPipe Hands
-// ---------------------------
+// -----------------------------------------
+// MEDIAPIPE SETUP
+// -----------------------------------------
 const hands = new Hands({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
 hands.setOptions({
   maxNumHands: 1,
   modelComplexity: 1,
-  minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
 });
 hands.onResults(onResults);
 
-// Camera
 const camera = new Camera(video, {
   onFrame: async () => {
     await hands.send({ image: video });
