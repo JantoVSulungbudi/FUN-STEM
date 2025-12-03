@@ -94,7 +94,7 @@ function queueGattOperation(op) {
 
 async function connectMicrobit() {
   try {
-    bleStatus.textContent = 'Scanning...';
+    bleStatus.textContent = 'Cari...';
     uBitDevice = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: "BBC micro:bit" }, { namePrefix: "micro:bit" }],
       optionalServices: [UART_SERVICE_UUID]
@@ -122,12 +122,12 @@ async function connectMicrobit() {
     }
 
     connected = true;
-    bleBtn.textContent = 'Disconnect';
+    bleBtn.textContent = 'Putus';
     bleStatus.textContent = `Connected: ${uBitDevice.name || 'micro:bit'}`;
-    console.log('Connected to micro:bit');
+    console.log('Tersambung ke micro:bit');
   } catch (err) {
-    console.error('BLE connect error', err);
-    bleStatus.textContent = 'Connection failed';
+    console.error('Koneksi BLE error', err);
+    bleStatus.textContent = 'Gagal sambung';
     connected = false;
   }
 }
@@ -139,18 +139,18 @@ function disconnectMicrobit() {
   connected = false;
   rxChar = null;
   txChar = null;
-  bleBtn.textContent = 'Connect';
-  bleStatus.textContent = 'Disconnected';
-  console.log('Disconnected from micro:bit');
+  bleBtn.textContent = 'Sambung';
+  bleStatus.textContent = 'Putus';
+  console.log('Terputus dari micro:bit');
 }
 
 function onDisconnected() {
-  console.log('micro:bit disconnected');
+  console.log('micro:bit terputus');
   connected = false;
   rxChar = null;
   txChar = null;
-  bleBtn.textContent = 'Connect';
-  bleStatus.textContent = 'Disconnected';
+  bleBtn.textContent = 'Sambung';
+  bleStatus.textContent = 'Putus';
 }
 
 bleBtn.onclick = () => {
