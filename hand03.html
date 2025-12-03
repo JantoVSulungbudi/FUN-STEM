@@ -123,7 +123,7 @@ async function connectMicrobit() {
 
     connected = true;
     bleBtn.textContent = 'Putus';
-    bleStatus.textContent = `Connected: ${uBitDevice.name || 'micro:bit'}`;
+    bleStatus.textContent = `Tersambung: ${uBitDevice.name || 'micro:bit'}`;
     console.log('Tersambung ke micro:bit');
   } catch (err) {
     console.error('Koneksi BLE error', err);
