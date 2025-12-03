@@ -197,7 +197,7 @@ function onResults(results) {
   let txt = '';
   for (let i = 0; i < landmarks.length; i++) {
     const p = landmarks[i];
-    txt += `${i}\t: x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}\n`;
+    txt += `\n${i}\t: \tx=${p.x.toFixed(3)}, \ty=${p.y.toFixed(3)}\n`;
   }
   landmarkBox.textContent = txt;
 
