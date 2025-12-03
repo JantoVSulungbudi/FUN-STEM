@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Hand Direction Detection</title>
+  <title>Wrist Position Direction</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
@@ -26,33 +26,32 @@ const log = document.getElementById("log");
 let lastState = "STOP";
 
 // ---------------------------
-// Direction logic
+// Wrist Position Direction Logic
 // ---------------------------
 function getDirection(landmarks) {
-  const wrist = landmarks[0];         // wrist
-  const indexTip = landmarks[8];      // index finger tip
+  const wrist = landmarks[0];    // wrist landmark
+  const x = wrist.x;             // normalized 0 → 1
+  const y = wrist.y;
 
-  const dx = indexTip.x - wrist.x;    // left-right
-  const dy = indexTip.y - wrist.y;    // up-down
+  // Horizontal thresholds
+  const left = 0.33;
+  const right = 0.66;
 
-  const absX = Math.abs(dx);
-  const absY = Math.abs(dy);
+  // Vertical thresholds
+  const top = 0.33;
+  const bottom = 0.66;
 
-  if (absX < 0.03 && absY < 0.03) return "STOP";
-
-  if (absX > absY) {
-    if (dx > 0.03) return "RIGHT";
-    if (dx < -0.03) return "LEFT";
-  } else {
-    if (dy > 0.03) return "DOWN";
-    if (dy < -0.03) return "UP";
-  }
+  // Priority logic
+  if (y < top) return "UP";
+  if (y > bottom) return "DOWN";
+  if (x < left) return "LEFT";
+  if (x > right) return "RIGHT";
 
   return "STOP";
 }
 
 // ---------------------------
-// MediaPipe hand detection
+// On Results from MediaPipe
 // ---------------------------
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -61,17 +60,16 @@ function onResults(results) {
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
     const landmarks = results.multiHandLandmarks[0];
 
-    // Draw landmarks
-    for (let p of landmarks) {
-      ctx.beginPath();
-      ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
-      ctx.fillStyle = "red";
-      ctx.fill();
-    }
+    // Draw wrist
+    const wrist = landmarks[0];
+    ctx.beginPath();
+    ctx.arc(wrist.x * canvas.width, wrist.y * canvas.height, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = "red";
+    ctx.fill();
 
     const state = getDirection(landmarks);
 
-    // Only print when it CHANGES
+    // Print only when state changes
     if (state !== lastState) {
       log.innerText = state;
       lastState = state;
@@ -80,7 +78,7 @@ function onResults(results) {
 }
 
 // ---------------------------
-// Setup MediaPipe
+// Setup MediaPipe Hands
 // ---------------------------
 const hands = new Hands({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
