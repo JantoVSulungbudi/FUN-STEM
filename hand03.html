@@ -166,7 +166,7 @@ function encodeBLEChar(code) {
     case 'DOWN': return 'b';
     case 'STOP': return 's';
     case 'LEPAS': return 'o';
-    case 'PICK-UP': return 'p';
+    case 'GENGGAM': return 'p';
     default: return null;
   }
 }
@@ -192,7 +192,7 @@ function dist(a,b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-// PICK-UP: 4,8,12 together
+// GENGGAM: 4,8,12 together
 function detectPickUp(L) {
   if (!L || L.length < 13) return false;
   const d48 = dist(L[4], L[8]);
@@ -263,7 +263,7 @@ function onResults(results) {
   const pickup = detectPickUp(L);
   const openhand = detectOpenHand(L);
   let handState = null;
-  if (pickup) handState = 'PICK-UP';
+  if (pickup) handState = 'GENGGAM';
   else if (openhand) handState = 'LEPAS';
 
   const movement = detectMovement(L);
