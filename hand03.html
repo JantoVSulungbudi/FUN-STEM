@@ -160,10 +160,10 @@ bleBtn.onclick = () => {
 
 function encodeBLEChar(code) {
   switch (code) {
-    case 'LEFT': return 'l';
-    case 'RIGHT': return 'r';
-    case 'UP': return 'f';
-    case 'DOWN': return 'b';
+    case 'KIRI': return 'l';
+    case 'KANAN': return 'r';
+    case 'NAIK': return 'f';
+    case 'TURUN': return 'b';
     case 'STOP': return 's';
     case 'LEPAS': return 'o';
     case 'GENGGAM': return 'p';
@@ -219,10 +219,10 @@ function detectMovement(L) {
   const x = w.x, y = w.y;
   const left = 0.4, right = 0.6, top = 0.5, bottom = 0.7;
 
-  if (y < top) return 'UP';
-  if (y > bottom) return 'DOWN';
-  if (x > right) return 'LEFT';   // swapped mapping as requested
-  if (x < left)  return 'RIGHT';
+  if (y < top) return 'NAIK';
+  if (y > bottom) return 'TURUN';
+  if (x > right) return 'KIRI';   // swapped mapping as requested
+  if (x < left)  return 'KANAN';
   return 'STOP';
 }
 
@@ -246,7 +246,7 @@ function onResults(results) {
         if (ch) sendToMicrobit(ch);
       }
     }
-    landmarkBox.textContent = 'No hands detected';
+    landmarkBox.textContent = 'Tidak ada tangan';
     return;
   }
 
