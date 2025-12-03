@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hand Tracking + micro:bit BLE (Fixed)</title>
+  <title>Lengan Robot</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
@@ -20,16 +20,16 @@
   </style>
 </head>
 <body>
-  <h2>Hand Tracking + micro:bit BLE (Fixed)</h2>
+  <h2>Kontrol Lengan Robot</h2>
 
   <div id="controls">
-    <button id="bleBtn">Connect</button>
-    <span id="bleStatus">Disconnected</span>
+    <button id="bleBtn">Sambung</button>
+    <span id="bleStatus">Putus</span>
   </div>
 
   <canvas id="canvas" width="640" height="480"></canvas>
-  <div id="status">Waiting...</div>
-  <div id="landmarkBox">Waiting for landmarks...</div>
+  <div id="status">Tunggu...</div>
+  <div id="landmarkBox">Tunggu landmarks...</div>
 
   <video id="video" autoplay playsinline style="display:none"></video>
 
@@ -46,7 +46,7 @@ const bleBtn = document.getElementById('bleBtn');
 const bleStatus = document.getElementById('bleStatus');
 
 /* -----------------------
-   Camera init
+   Inisialisasi kamera
    ----------------------- */
 async function initCamera() {
   try {
@@ -81,7 +81,7 @@ const UART_TX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // n
 const UART_RX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // write (web -> microbit)
 
 let uBitDevice = null;
-let rxChar = null; // write characteristic (web -> microbit)
+let rxChar = null; // tulis characteristic (web -> microbit)
 let txChar = null; // notify characteristic (microbit -> web)
 let connected = false;
 
