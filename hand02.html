@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hand Movement Detection</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <style>
+    body {
+      background: #111;
+      color: white;
+      text-align: center;
+      font-family: Arial;
+    }
+    #output_canvas {
+      width: 480px;
+      height: 360px;
+      border: 1px solid #444;
+    }
+    #landmarkBox {
+      width: 480px;
+      height: 200px;
+      overflow-y: scroll;
+      background: #000;
+      border: 1px solid #444;
+      padding: 10px;
+      margin: 10px auto;
+      text-align: left;
+      font-size: 13px;
+      white-space: pre;
+    }
+    #movementBox {
+      width: 480px;
+      background: #222;
+      padding: 10px;
+      margin: 10px auto;
+      border: 1px solid #444;
+      font-size: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Hand Tracking + Movement Detection</h2>
+
+  <video id="video" autoplay playsinline style="display:none;"></video>
+  <canvas id="output_canvas"></canvas>
+
+  <div id="movementBox">Movement: none</div>
+  <div id="landmarkBox">Waiting for landmarks...</div>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("output_canvas");
+const ctx = canvas.getContext("2d");
+const movementBox = document.getElementById("movementBox");
+const landmarkBox = document.getElementById("landmarkBox");
+
+// Draw tiny "X"
+function drawCross(ctx, x, y, size, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - size, y - size);
+  ctx.lineTo(x + size, y + size);
+  ctx.moveTo(x + size, y - size);
+  ctx.lineTo(x - size, y + size);
+  ctx.stroke();
+}
+
+// Camera init
+async function initCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+}
+initCamera();
+
+// -------- MOVEMENT + GESTURE VARIABLES --------
+let lastWristX = null;
+let lastWristY = null;
+const moveThreshold = 0.02; // adjust sensitivity
+
+function detectMovement(wrist) {
+  let movement = "none";
+
+  if (lastWristX !== null) {
+    const dx = wrist.x - lastWristX;
+    const dy = wrist.y - lastWristY;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (dx > moveThreshold) movement = "RIGHT";
+      else if (dx < -moveThreshold) movement = "LEFT";
+    } else {
+      if (dy > moveThreshold) movement = "DOWN";
+      else if (dy < -moveThreshold) movement = "UP";
+    }
+  }
+
+  lastWristX = wrist.x;
+  lastWristY = wrist.y;
+
+  return movement;
+}
+
+function distance(a, b) {
+  return Math.sqrt(
+    (a.x - b.x)**2 +
+    (a.y - b.y)**2 +
+    (a.z - b.z)**2
+  );
+}
+
+// Detect pick-up (fist) and open hand
+function detectHandOpenClose(landmarks) {
+  const wrist = landmarks[0];
+  const tips = [4, 8, 12, 16, 20];
+
+  let avgDist = 0;
+  for (let i of tips) avgDist += distance(wrist, landmarks[i]);
+  avgDist /= tips.length;
+
+  if (avgDist < 0.09) return "PICK-UP (FIST)";
+  if (avgDist > 0.17) return "OPEN HAND";
+
+  return "neutral";
+}
+
+// -------- MAIN HAND PROCESSING --------
+function onResults(results) {
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+  if (results.multiHandLandmarks) {
+    for (const landmarks of results.multiHandLandmarks) {
+
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#00FFAA", lineWidth: 2 });
+
+      // Draw all points as small X
+      landmarks.forEach((p) => {
+        const x = p.x * canvas.width;
+        const y = p.y * canvas.height;
+        drawCross(ctx, x, y, 2, "#FF4444");
+      });
+
+      // Detect movement
+      const wrist = landmarks[0];
+      let move = detectMovement(wrist);
+
+      // Detect open / pick-up
+      let handState = detectHandOpenClose(landmarks);
+
+      let resultText = move;
+      if (handState !== "neutral") resultText = handState;
+
+      movementBox.textContent = "Movement: " + resultText;
+
+      // Display all landmark values
+      let text = "";
+      for (let i = 0; i < landmarks.length; i++) {
+        const p = landmarks[i];
+        text += `${i} → x=${p.x.toFixed(3)}, y=${p.y.toFixed(3)}, z=${p.z.toFixed(3)}\n`;
+      }
+      landmarkBox.textContent = text;
+    }
+  }
+  ctx.restore();
+}
+
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+hands.onResults(onResults);
+
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 480, height: 360
+});
+camera.start();
+</script>
+</body>
+</html>
